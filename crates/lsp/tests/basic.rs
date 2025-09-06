@@ -378,6 +378,7 @@ async fn request_code_action(
 fn apply_all_code_actions(text: &str, actions: &Vec<Value>) -> String {
   // As offsets are based on the original text, we need to track changes
   let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+  let had_trailing_newline = text.ends_with('\n');
   let mut all_edits = Vec::new();
   // Collect all edits from all code actions
   for action in actions {
@@ -424,15 +425,22 @@ fn apply_all_code_actions(text: &str, actions: &Vec<Value>) -> String {
   });
 
   // Apply edits
-  for (start_line, start_char, _end_line, end_char, new_text) in all_edits {
+  for (start_line, start_char, end_line, end_char, new_text) in all_edits {
+    assert!(
+      start_line == end_line,
+      "Multi-line edits are not supported in this test"
+    );
     let line = &lines[start_line];
     let prefix = &line[..start_char];
     let suffix = &line[end_char..];
     lines[start_line] = format!("{}{}{}", prefix, new_text, suffix);
   }
-
   // Join lines back into a single string
-  lines.join("\n")
+  let mut s = lines.join("\n");
+  if had_trailing_newline {
+    s.push('\n');
+  }
+  s
 }
 
 #[tokio::test]
@@ -442,8 +450,7 @@ id: no-console-rule
 language: TypeScript
 rule:
   pattern: console.log($$$A)
-fix: |
-  alert($$$A)
+fix: alert($$$A)
 ";
   let mut client = create_lsp_framed(yamls).await;
 
@@ -485,16 +492,14 @@ language: TypeScript
 message: Use alert instead of console.log
 rule:
   pattern: console.log($$$A)
-fix: |
-  alert($$$A)
+fix: alert($$$A)
 ---
 id: use-window-alert
 language: TypeScript
 message: Use window.alert instead of console.log
 rule:
   pattern: console.log($$$A)
-fix: |
-  window.alert($$$A)
+fix: window.alert($$$A)
 ";
   let mut client = create_lsp_framed(yamls).await;
 
@@ -543,8 +548,7 @@ language: TypeScript
 message: Use alert instead of console.log
 rule:
   pattern: console.log($$$A)
-fix: |
-  alert($$$A)";
+fix: alert($$$A)";
   let mut client = create_lsp_framed(yamls).await;
 
   // Send file content to server
@@ -586,7 +590,7 @@ fix: |
   // Apply the fix all code action and verify the text change
   let fixed_text = apply_all_code_actions(file_content, actions);
   // TODO: This fix ends up with \n being trimmed at the end, need to investigate
-  assert_eq!(fixed_text, "alert('Hello, world!')\nalert('Another log')");
+  assert_eq!(fixed_text, "alert('Hello, world!')\nalert('Another log')\n");
 }
 
 // Custom LSP Codec for Content-Length framed JSON-RPC
