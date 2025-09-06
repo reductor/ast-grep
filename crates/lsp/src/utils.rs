@@ -85,7 +85,7 @@ pub fn diagnostic_to_code_action(
       CodeAction {
         title,
         command: None,
-        diagnostics: None,
+        diagnostics: Some(vec![diagnostic.clone()]),
         edit: Some(edit),
         disabled: None,
         kind: Some(CodeActionKind::QUICKFIX),
