@@ -606,29 +606,38 @@ impl Decoder for LspCodec {
       Ok(s) => s,
       Err(_) => return Ok(None), // Not valid UTF-8 yet
     };
-    let header = "Content-Length: ";
-    let header_pos = src_str.find(header);
-    if let Some(pos) = header_pos {
-      let rest = &src_str[pos + header.len()..];
-      let crlf = rest.find("\r\n\r\n");
-      if let Some(crlf_pos) = crlf {
-        let len_str = &rest[..crlf_pos];
-        let content_len: usize = len_str
-          .trim()
-          .parse()
-          .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        let body_start = pos + header.len() + crlf_pos + 4;
-        if src.len() >= body_start + content_len {
-          let json_bytes = &src[body_start..body_start + content_len];
-          let value = serde_json::from_slice(json_bytes)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-          // Remove processed bytes manually
-          let _ = src.split_to(body_start + content_len);
-          return Ok(Some(value));
-        }
+    // Find end of headers
+    let sep = "\r\n\r\n";
+    let Some(hdr_end) = src_str.find(sep) else {
+      return Ok(None);
+    };
+    let headers = &src_str[..hdr_end];
+    // Extract Content-Length
+    let mut content_len: Option<usize> = None;
+    for line in headers.lines() {
+      if let Some(v) = line.strip_prefix("Content-Length:") {
+        content_len = Some(
+          v.trim()
+            .parse()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+        );
+        break;
       }
     }
-    Ok(None)
+    let content_len = match content_len {
+      Some(n) => n,
+      None => return Ok(None),
+    };
+    let body_start = hdr_end + sep.len();
+    if src.len() < body_start + content_len {
+      return Ok(None);
+    }
+    let json_bytes = &src[body_start..body_start + content_len];
+    let value = serde_json::from_slice(json_bytes)
+      .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    // Remove processed bytes
+    let _ = src.split_to(body_start + content_len);
+    Ok(Some(value))
   }
 }
 
