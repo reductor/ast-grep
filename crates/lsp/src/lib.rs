@@ -72,7 +72,7 @@ fn code_action_provider(
       CodeActionKind::new(FIX_ALL_AST_GREP),
     ]),
     work_done_progress_options: Default::default(),
-    resolve_provider: Some(true),
+    resolve_provider: Some(false),
   }))
 }
 
